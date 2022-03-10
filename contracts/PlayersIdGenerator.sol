@@ -29,10 +29,8 @@ contract PlayersIdGenerator is IPlayersIdGenerator {
 
   ///This is just a helper function to help with transparency
   function typeName(uint256 _minterType) public pure returns(string memory) {
-    if (_minterType == uint256(MinterTypes.Scouting)) {
-      return "Scouting";
-    }
+    require(_minterType == uint256(MinterTypes.Scouting), "Not existing");
 
-    revert("Not existing");
+    return "Scouting";
   }
 }

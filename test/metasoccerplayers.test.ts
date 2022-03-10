@@ -79,12 +79,12 @@ describe("MetaSoccerPlayer", function () {
     it("Should revert if minting twice the same token", async function () {
       await players.mintPlayer(admin.address, 1, 0);
       const e = players.mintPlayer(admin.address, 1, 0);
-      expect(e).to.be.revertedWith("ERC721: token already minted");
+      await expect(e).to.be.revertedWith("Player exists with generated ID");
     });
 
     it("Should not revert if everything is in order", async function () {
       const e = players.mintPlayer(admin.address, 1, 0);
-      expect(e).to.not.be.reverted;
+      await expect(e).to.not.be.reverted;
     });
 
     it("Should save the origin of the token", async function () {
@@ -130,20 +130,6 @@ describe("MetaSoccerPlayer", function () {
     });
   });
 
-  describe("view functions", () => {
-    it("metadata uri", async () => {
-      const uri = await players.metadata_uri();
-      const metadataURI = await players.tokenURI(tokenId);
-      expect(metadataURI).to.equal(uri + "/" + tokenId);
-    });
-
-    it("contract uri", async () => {
-      const uri = await players.metadata_uri();
-      const contractUri = await players.contractURI();
-      expect(contractUri).to.equal(uri);
-    });
-  });
-
   describe("contract roles", () => {
     it("Only SET_DNA_ROlE should be able to set DNA", async () => {
       const dna = "RANDOM_DNA";
@@ -177,7 +163,9 @@ describe("MetaSoccerPlayer", function () {
     });
 
     it("Only admin should be able to set metadata uri", async () => {
+      const playerId = 1;
       const metadataUri = "https://example.com";
+      const expectedTokenUri = "https://example.com/" + playerId;
 
       const noAdminRoleTx = players.connect(noRole).setMetadataURI(metadataUri);
       await expect(noAdminRoleTx).to.be.revertedWith(
@@ -186,6 +174,12 @@ describe("MetaSoccerPlayer", function () {
 
       const adminRoleTx = players.connect(admin).setMetadataURI(metadataUri);
       await expect(adminRoleTx).not.be.reverted;
+
+      const expectedMetadataUri = await players.contractURI();
+      expect(expectedMetadataUri).to.equal(metadataUri);
+
+      const tokenUri = await players.tokenURI(playerId);
+      expect(tokenUri).to.equal(expectedTokenUri);
     });
 
     it("Only admin should be able to set id generator", async () => {
@@ -200,6 +194,14 @@ describe("MetaSoccerPlayer", function () {
         .connect(admin)
         .setIdGenerator(idGenerator2.address);
       await expect(adminRoleTx).not.be.reverted;
+    });
+
+    it("Player id generator should revert with zero address", async () => {
+      await expect(
+        players
+          .connect(admin)
+          .setIdGenerator("0x0000000000000000000000000000000000000000")
+      ).to.be.revertedWith("Invalid address");
     });
   });
 });

@@ -126,7 +126,7 @@ describe("Scout Scouting", function () {
     level: number,
     backend: SignerWithAddress
   ) {
-    const covering = "Goalkeeper";
+    const role = "Goalkeeper";
     const timestamp = getCurrentTimestampInSeconds() + 1000000;
     await scouts.mint(owner.address, tokenId);
     await scouts.connect(owner).setApprovalForAll(scoutScouting.address, true);
@@ -135,7 +135,7 @@ describe("Scout Scouting", function () {
       backend,
       tokenId,
       level,
-      covering,
+      role,
       timestamp
     );
     const r = scoutScouting
@@ -143,7 +143,7 @@ describe("Scout Scouting", function () {
       .sendToScouting(
         tokenId,
         level,
-        covering,
+        role,
         scoutingPeriod,
         timestamp,
         signature
@@ -157,8 +157,8 @@ describe("Scout Scouting", function () {
     backend: SignerWithAddress,
     tokenId: number,
     level: number,
-    covering: string,
-    timestamp: number
+    role: string,
+    expirationTimestamp: number
   ) {
     const domain = {
       name: "MetaSoccer",
@@ -171,17 +171,17 @@ describe("Scout Scouting", function () {
     const message = {
       scoutId: tokenId,
       level,
-      covering,
+      role,
       scoutingPeriod,
-      timestamp,
+      expirationTimestamp,
     };
 
     const ScoutingRequest = [
       { name: "scoutId", type: "uint256" },
       { name: "level", type: "uint8" },
-      { name: "covering", type: "string" },
+      { name: "role", type: "string" },
       { name: "scoutingPeriod", type: "uint256" },
-      { name: "timestamp", type: "uint256" },
+      { name: "expirationTimestamp", type: "uint256" },
     ];
 
     const types = {
@@ -289,7 +289,7 @@ describe("Scout Scouting", function () {
 
       const tokenId = 1;
       const level = 4;
-      const covering = "Goalkeeper";
+      const role = "Goalkeeper";
       const timestamp = getCurrentTimestampInSeconds() + 1000000;
       await scouts.mint(nonDeployer.address, tokenId);
       await scouts
@@ -300,7 +300,7 @@ describe("Scout Scouting", function () {
         backend,
         tokenId,
         level,
-        covering,
+        role,
         timestamp
       );
       const r = metasoccerScouting
@@ -308,7 +308,7 @@ describe("Scout Scouting", function () {
         .sendToScouting(
           tokenId,
           level,
-          covering,
+          role,
           scoutingPeriod,
           timestamp,
           signature
@@ -323,7 +323,7 @@ describe("Scout Scouting", function () {
 
       const tokenId = 1;
       const level = 4;
-      const covering = "Goalkeeper";
+      const role = "Goalkeeper";
       const timestamp = getCurrentTimestampInSeconds() + 1000000;
       await scouts.mint(nonDeployer.address, tokenId);
       await scouts
@@ -334,7 +334,7 @@ describe("Scout Scouting", function () {
         backend,
         tokenId,
         level,
-        covering,
+        role,
         timestamp
       );
       const r = metasoccerScouting
@@ -342,7 +342,7 @@ describe("Scout Scouting", function () {
         .sendToScouting(
           tokenId,
           level + 1,
-          covering,
+          role,
           scoutingPeriod,
           timestamp,
           signature
@@ -357,7 +357,7 @@ describe("Scout Scouting", function () {
 
       const tokenId = 1;
       const level = 4;
-      const covering = "Goalkeeper";
+      const role = "Goalkeeper";
       const timestamp = getCurrentTimestampInSeconds() - 1000000;
       await scouts.mint(nonDeployer.address, tokenId);
       await scouts
@@ -368,7 +368,7 @@ describe("Scout Scouting", function () {
         backend,
         tokenId,
         level,
-        covering,
+        role,
         timestamp
       );
       const r = metasoccerScouting
@@ -376,7 +376,7 @@ describe("Scout Scouting", function () {
         .sendToScouting(
           tokenId,
           level,
-          covering,
+          role,
           scoutingPeriod,
           timestamp,
           signature
@@ -659,14 +659,14 @@ describe("Scout Scouting", function () {
     });
 
     it("Owner can be able to send scout scouting after cancel scouting", async () => {
-      const covering = "Goalkeeper";
+      const role = "Goalkeeper";
       const timestamp = getCurrentTimestampInSeconds() + 1000000;
       const signature = await getScoutingRequestSignature(
         metasoccerScouting,
         backend,
         scoutId,
         scoutLevel,
-        covering,
+        role,
         timestamp
       );
       const tx = metasoccerScouting
@@ -674,7 +674,7 @@ describe("Scout Scouting", function () {
         .sendToScouting(
           scoutId,
           scoutLevel,
-          covering,
+          role,
           scoutingPeriod,
           timestamp,
           signature
@@ -745,6 +745,14 @@ describe("Scout Scouting", function () {
       await expect(
         metasoccerScouting.connect(nonDeployer).finishScouting(scoutId)
       ).to.emit(metasoccerScouting, "ScoutingFinished");
+    });
+
+    it("Admin should not be able to transfer user scouts", async () => {
+      await expect(
+        metasoccerScouting
+          .connect(deployer)
+          .withdrawNFT(scouts.address, scoutId)
+      ).to.be.revertedWith("ERC721: transfer from incorrect owner");
     });
 
     it("Only scouting owner should not be able to claim players", async () => {
@@ -910,6 +918,26 @@ describe("Scout Scouting", function () {
 
       await metasoccerScouting.connect(deployer).setPause(pause);
       expect(await metasoccerScouting.paused()).to.be.equal(pause);
+    });
+
+    it("Only admin should be able to set entropy manager", async () => {
+      const entropyManager2 = "0x29D7d1dd5B6f9C864d9db560D72a247c178aE86B";
+      const nonAdminTx = metasoccerScouting
+        .connect(nonDeployer)
+        .setEntropyManager(entropyManager2);
+      await expect(nonAdminTx).to.be.reverted;
+
+      const zeroTx = metasoccerScouting
+        .connect(deployer)
+        .setEntropyManager("0x0000000000000000000000000000000000000000");
+
+      await expect(zeroTx).to.be.revertedWith("Invalid Address");
+
+      await metasoccerScouting
+        .connect(deployer)
+        .setEntropyManager(entropyManager2);
+      const currentEntropyManager = await metasoccerScouting.entropyManager();
+      expect(currentEntropyManager).to.equal(entropyManager2);
     });
   });
 

@@ -48,7 +48,7 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
 
     Scouting[] public scoutings;
 
-    MetaSoccerPlayers players;
+    MetaSoccerPlayers public immutable players;
 
     event ScoutingStarted(address indexed owner, uint256 indexed scoutId, uint256 scoutingId, Scouting scouting);
     event ScoutingCancelled(address indexed owner, uint256 indexed scoutId, uint256 scoutingId, Scouting scouting);
@@ -59,7 +59,7 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
         bool finished;
         bool claimed;
         uint8 level;
-        string covering;
+        string role;
         address owner;
         uint256 timestamp;
         uint256 scoutId;
@@ -87,18 +87,18 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
      * @dev Blocked transfers, this NFT is used only to keep track of scout original owners.
      */
     function transferFrom(
-        address from,
-        address to,
-        uint256 tokenId
+        address,
+        address,
+        uint256
     ) public override {
         revert("Transferring Staked NFT");
     }
 
     function safeTransferFrom(
-        address from,
-        address to,
-        uint256 tokenId,
-        bytes memory _data
+        address,
+        address,
+        uint256,
+        bytes memory
     ) public override {
         revert("Transferring Staked NFT");
     }
@@ -120,22 +120,23 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
     /**
      * @dev Scout NFT attributes will evolve off-chain, but scouting level will depend on them. 
      * The decided approach to solve this issue is that the backend will "authorize" the scouting
-     * by signing an EIP712 compliant message including the Scout ID, level and covering.
+     * by signing an EIP712 compliant message including the Scout ID, level and role.
      * The signer account requires the SIGN_ATTRIBUTES_ROLE role.
      */
-    function sendToScouting(uint256 _scoutId, uint8 _level, string calldata _covering, uint256 _scoutingPeriod, uint256 _timestamp, bytes calldata _signature) external nonReentrant whenNotPaused {
+    function sendToScouting(uint256 _scoutId, uint8 _level, string calldata _role, uint256 _scoutingPeriod, uint256 _expirationTimestamp, bytes calldata _signature) external nonReentrant whenNotPaused {
         address owner = ERC721(scouts).ownerOf(_scoutId);
         require(_msgSender() == owner, "Not Scout Owner");
-        _verifyScoutingRequestSignature(_scoutId, _level, _covering, _scoutingPeriod, _timestamp, _signature);
+        _verifyScoutingRequestSignature(_scoutId, _level, _role, _scoutingPeriod, _expirationTimestamp, _signature);
 
-        for (uint256 i = 0; i < paymentTokens.length; i++) {
+        uint256 paymentTokensLength = paymentTokens.length;
+        for (uint256 i = 0; i < paymentTokensLength; i++) {
             uint256 price = priceByLevel[paymentTokens[i]][_level];
             if (price > 0) {
                 IERC20(paymentTokens[i]).safeTransferFrom(owner, beneficiary, price);
             }
         }
 
-        _startScouting(_scoutId, _level, _covering, _scoutingPeriod, owner);
+        _startScouting(_scoutId, _level, _role, _scoutingPeriod, owner);
     }
 
     /**
@@ -181,7 +182,6 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
 
         uint256 numberOfSeedsToGenerate = (playersToMint * requiredPlayerSeeds);
         uint256[] memory seeds = _expand(scoutingSeed, numberOfSeedsToGenerate);
-        uint256 seedIndex = 0;
         scouting.claimed = true;
         uint256[] memory playerIds = new uint256[](playersToMint);
         for (uint8 i = 0; i < playersToMint; i++) {
@@ -189,10 +189,9 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
             playerIds[i] = playerId;
 
             for(uint8 j = 0; j < requiredPlayerSeeds; j++) {
-                players.setEntropy(playerId, j, seeds[seedIndex + j]);
+                players.setEntropy(playerId, j, seeds[(i * requiredPlayerSeeds) + j]);
             }
 
-            seedIndex += requiredPlayerSeeds;
         }
 
         scouting.playerIds = playerIds;
@@ -232,6 +231,10 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
 
     function getScoutingSeed(uint256 _scoutingId, uint256 _index) public view returns (uint256) {
         return getEntropy(_scoutingId, _index);
+    }
+
+    function getLastScoutingIdByScoutId(uint256 _scoutId) public view returns (uint256) {
+        return scoutingsByScout[_scoutId][scoutingsByScout[_scoutId].length - 1];
     }
 
     /**
@@ -285,6 +288,11 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
         playersPerLevel[_level] = _nPlayers;
     }
 
+    function setEntropyManager(address _entropyManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_entropyManager != address(0), "Invalid Address");
+        entropyManager = _entropyManager;
+    }
+
     ///@dev Withdraw function to avoid locking tokens in the contract
     function withdrawERC20(address _address, uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         IERC20(_address).transfer(msg.sender, _amount);
@@ -308,22 +316,28 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
         }
     }
 
-    function getLastScoutingIdByScoutId(uint256 _scoutId) public view returns (uint256) {
-        return scoutingsByScout[_scoutId][scoutingsByScout[_scoutId].length - 1];
-    }
-
     // Internal functions
 
-    function _startScouting(uint256 _scoutId, uint8 _level, string calldata _covering, uint256 _scoutingPeriod, address _owner) internal {
+    function _startScouting(uint256 _scoutId, uint8 _level, string calldata _role, uint256 _scoutingPeriod, address _owner) internal {
         ERC721(scouts).safeTransferFrom(_owner, address(this), _scoutId);
         if (_exists(_scoutId)) {
-            _safeTransfer(address(this), _owner, _scoutId, "");
+            _transfer(address(this), _owner, _scoutId);
         } else {
            _mint(_owner, _scoutId);
         }
 
         uint256[] memory playerIds = new uint256[](0);
-        Scouting memory scouting = Scouting(false, false, _level, _covering, _owner, block.timestamp, _scoutId, playerIds, _scoutingPeriod);
+        Scouting memory scouting = Scouting({
+            finished: false,
+            claimed: false,
+            level: _level,
+            role: _role,
+            owner: _owner,
+            timestamp: block.timestamp,
+            scoutId: _scoutId,
+            playerIds: playerIds,
+            scoutingPeriod: _scoutingPeriod
+        });
         uint256 scoutingId = scoutings.length;
 
         scoutings.push(scouting);
@@ -351,18 +365,18 @@ contract MetaSoccerScouting is Context, Pausable, AccessControl, IERC721Receiver
     /**
      * @dev Since scout level evolves off-chain, "_verifyScoutingRequestSignature" makes sure the requested scouting is allowed.
      * The backend that holds latest scout attributes will sign an EIP712 message with an account having the SIGN_ATTRIBUTES_ROLE.
-     * The message includes the scoutId, the scouting level and the scouting covering that'll be used as an starting point for the resulting players attributes.
+     * The message includes the scoutId, the scouting level and the scouting role that'll be used as an starting point for the resulting players attributes.
      * A UNIX timestamp in seconds has also been added as a signature expiration.
      */
-    function _verifyScoutingRequestSignature(uint256 _scoutId, uint8 _level, string calldata _covering, uint256 _scoutingPeriod, uint256 _timestamp, bytes calldata _signature) internal {
-        require(_timestamp > block.timestamp, "Signature expired");
+    function _verifyScoutingRequestSignature(uint256 _scoutId, uint8 _level, string calldata _role, uint256 _scoutingPeriod, uint256 _expirationTimestamp, bytes calldata _signature) internal {
+        require(_expirationTimestamp > block.timestamp, "Signature expired");
         bytes32 digest = _hashTypedDataV4(keccak256(abi.encode(
-            keccak256("ScoutingRequest(uint256 scoutId,uint8 level,string covering,uint256 scoutingPeriod,uint256 timestamp)"),
+            keccak256("ScoutingRequest(uint256 scoutId,uint8 level,string role,uint256 scoutingPeriod,uint256 expirationTimestamp)"),
             _scoutId,
             _level,
-            keccak256(bytes(_covering)),
+            keccak256(bytes(_role)),
             _scoutingPeriod,
-            _timestamp
+            _expirationTimestamp
         )));
         address signer = ECDSA.recover(digest, _signature);
         require(hasRole(SIGN_ATTRIBUTES_ROLE, signer), "Invalid signer");

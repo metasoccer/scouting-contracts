@@ -43,12 +43,11 @@ contract EntropyStorage is AccessControl {
   }
 
   function setEntropy(uint256 _tokenId, uint256 _index, uint256 _randomness) external onlyRole(SET_ENTROPY_ROLE) {
-    Entropy memory entropy = entropyStorage[_tokenId][_index];
+    Entropy storage entropy = entropyStorage[_tokenId][_index];
     ///@notice Once set, entropy can't be changed
     require(!entropy.finished, "Setting existent entropy");
     entropy.value = _randomness;
     entropy.finished = true;
-    entropyStorage[_tokenId][_index] = entropy;
   }
 
 }

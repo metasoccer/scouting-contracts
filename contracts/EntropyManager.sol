@@ -69,7 +69,14 @@ contract EntropyManager is IEntropyManager, VRFConsumerBase, TokenWithdraw {
 
   function requestEntropy(address _address, uint256 _tokenId, uint256 _index) external onlyRole(REQUESTER_ROLE) {
     require(!tokenEntropyRequest[_address][_tokenId][_index].requested, "Request already performed");
-    Request memory request = Request(false, true, _address, _tokenId, _index, 0);
+    Request memory request = Request({
+      finished: false,
+      requested: true,
+      targetAddress: _address,
+      tokenId: _tokenId,
+      index: _index,
+      value: 0
+    });
     bytes32 requestId = getRandomNumber();
     entropyRequests[requestId] = request;
     tokenEntropyRequest[_address][_tokenId][_index] = request;
@@ -89,7 +96,7 @@ contract EntropyManager is IEntropyManager, VRFConsumerBase, TokenWithdraw {
   */
   function fulfillRandomness(bytes32 requestId, uint256 randomness) internal override {
     Request memory request = entropyRequests[requestId];
-    require(request.finished == false, "Requested existent entropy");
+    require(!request.finished, "Requested existent entropy");
     request.value = randomness;
     request.finished = true;
     EntropyStorage(request.targetAddress).setEntropy(request.tokenId, request.index, randomness);

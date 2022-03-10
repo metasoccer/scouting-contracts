@@ -34,7 +34,7 @@ contract MetaSoccerPlayers is ERC721Enumerable, EntropyStorage, TokenWithdraw, R
 
   IPlayersIdGenerator public idGenerator;
 
-  string public metadata_uri = "https://api.metasoccer.com/players/collection/meta";
+  string private metadata_uri = "https://api.metasoccer.com/players/collection/meta";
 
   constructor(string memory _description, string memory _name, address _playerIdGenerator) ERC721(_description, _name) {
     idGenerator = IPlayersIdGenerator(_playerIdGenerator);
@@ -45,6 +45,8 @@ contract MetaSoccerPlayers is ERC721Enumerable, EntropyStorage, TokenWithdraw, R
     require(_owner != address(0), "Invalid owner address");
 
     uint256 _tokenId = idGenerator.getPlayerId(_minterType, _minterId, totalSupply());
+    require(!_exists(_tokenId), "Player exists with generated ID");
+
     tokenGenerator[_tokenId][0] = _minterType;
     tokenGenerator[_tokenId][1] = _minterId;
 
@@ -80,8 +82,9 @@ contract MetaSoccerPlayers is ERC721Enumerable, EntropyStorage, TokenWithdraw, R
   }
 
   function getOwnedTokenIds(address owner) external view returns (uint256[] memory) {
-    uint256[] memory ret = new uint256[](balanceOf(owner));
-    for (uint256 i = 0; i < balanceOf(owner); i++) {
+    uint256 balance = balanceOf(owner);
+    uint256[] memory ret = new uint256[](balance);
+    for (uint256 i = 0; i < balance; i++) {
         ret[i] = tokenOfOwnerByIndex(owner, i);
     }
     return ret;
@@ -103,6 +106,7 @@ contract MetaSoccerPlayers is ERC721Enumerable, EntropyStorage, TokenWithdraw, R
   }
 
   function setIdGenerator(address _newIdGenerator) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    require(_newIdGenerator != address(0), "Invalid address");
     idGenerator = IPlayersIdGenerator(_newIdGenerator);
   }
 }
